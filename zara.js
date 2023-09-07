@@ -61,9 +61,9 @@ class DocumentController extends TelegramBaseController {
 							if (fileData.ok && fileData.result && fileData.result.file_path) {
 								const filePath = fileData.result.file_path;
 								const downloadUrl = `https://api.telegram.org/file/bot${botAPIKey}/${filePath}`;
-								exec(`wget ${downloadUrl} -O ./temp/${filePath} && apksigner sign --ks keystore/${keystoreFileName} --ks-pass pass:${keystorePASS} temp/${filePath}`, (error, stdout, stderr) => {
+								exec(`wget ${downloadUrl} -O ./temp/${filePath} -q && apksigner sign --ks keystore/${keystoreFileName} --ks-pass pass:${keystorePASS} temp/${filePath}`, (error, stdout, stderr) => {
 									if (error) {
-											$.sendMessage(`Couldn\'t handle the file: ${error}`);
+											$.sendMessage(`Couldn\'t accept the file, sorry.`);
 											console.error(`Error running bash command: ${error}`);
 											return;
 									}
@@ -77,7 +77,7 @@ class DocumentController extends TelegramBaseController {
 											fs.unlinkSync(`temp/${filePath}`);
 										})
 										.catch(error => {
-											$.sendMessage(`Error sending the file: ${error}`)
+											$.sendMessage(`Couldn\'t send the file, sorry.`)
 											console.error('Error sending document:', error);
 										});
 								});
