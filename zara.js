@@ -1,104 +1,102 @@
-'use strict'
-
 // resolve deps
-const Telegram = require('telegram-node-bot')
-const fetch = require('node-fetch');
-const fs = require('fs')
-const https = require('https')
+const { Telegraf } = require('telegraf');
+const fs = require('fs');
 const { exec } = require('child_process');
 
 // env
-const botAPIKey = ''
-const ownerChatID = 
-const keystorePASS = ''
-const keystoreFileName = ''
+const botToken = ;
+const ownerChatID = ;
+const keystorePASS = ;
+const keystoreFileName = ;
 
-const TelegramBaseController = Telegram.TelegramBaseController
-const TextCommand = Telegram.TextCommand
-const tg = new Telegram.Telegram(botAPIKey)
+const bot = new Telegraf(botToken);
 
-class Greeting extends TelegramBaseController {
-    pingHandler($) {
-		const messageText = $.message.text;
-        // Check if the message text qualifies as a standard greeting
-        if ((/^(hi|hello|hey|hiya|sup|start|bonjour|hola)$/i).test(messageText)) {
-            $.sendMessage('Namaste');
+// Command to trigger the inline options
+bot.command('start', (ctx) => {
+    ctx.reply('Choose an option:', {
+        reply_markup: {
+            inline_keyboard: [
+                [
+                    { text: 'Option 1', callback_data: 'option1' },
+                    { text: 'Option 2', callback_data: 'option2' },
+                ],
+                [
+                    { text: 'Option 3', callback_data: 'option3' },
+                    { text: 'Option 4', callback_data: 'option4' },
+                ],
+            ]
         }
-		else {
-			$.sendMessage('Quit messing around 🥱');
-		}
-	}
-	get routes() {
-        return {
-            'pingCommand': 'pingHandler'
-        }
-    }
-}
-
-class DocumentController extends TelegramBaseController {
-	handle($) {
-		// Check if the message is a document
-		if ($.message.document) {
-			$.sendMessage('Working on it...')
-			// Get the file name
-			const fileName = $.message.document.fileName;
-			// Check if the file has the .apk extension
-			if (fileName.endsWith('.apk')) {
-				// Get the file ID
-				const fileId = $.message.document.fileId;
-				// Get the file path and download URL
-				tg.api.getFile(fileId).then(file => {
-					// Fetch the file information
-					const fetchUrl = `https://api.telegram.org/bot${botAPIKey}/getFile?file_id=${fileId}`;
-					fetch(fetchUrl)
-						.then(responseFetch => {
-							if (!responseFetch.ok) {
-								throw new Error('Failed to fetch file information');
-							}
-							return responseFetch.json();
-						})
-						.then(fileData => {
-							if (fileData.ok && fileData.result && fileData.result.file_path) {
-								const filePath = fileData.result.file_path;
-								const downloadUrl = `https://api.telegram.org/file/bot${botAPIKey}/${filePath}`;
-								exec(`wget ${downloadUrl} -O ./temp/${filePath} -q && apksigner sign --ks keystore/${keystoreFileName} --ks-pass pass:${keystorePASS} temp/${filePath}`, (error, stdout, stderr) => {
-									if (error) {
-											$.sendMessage(`Couldn\'t accept the file, sorry.`);
-											console.error(`Error running bash command: ${error}`);
-											return;
-									}
-									console.log(`stdout: ${stdout}`);
-									console.error(`stderr: ${stderr}`);
-									// Send the signed file back
-									$.sendMessage(`Almost done, boo 😘`);
-									tg.api.sendDocument($.message.chat.id, fs.createReadStream(`temp/${filePath}`))
-										.then(() => {
-											// Cleanup: Delete the temporary file
-											fs.unlinkSync(`temp/${filePath}`);
-										})
-										.catch(error => {
-											$.sendMessage(`Couldn\'t send the file, sorry.`)
-											console.error('Error sending document:', error);
-										});
-								});
-							}
-						});
-				});
-			}
-		}
-	}
-}
-
-tg.onMaster(() => {
-	tg.api.sendMessage(ownerChatID, "Ok, I'm up 🥱").catch(error => {
-		console.error(error);
-	});
+    });
 });
 
-tg.router
-	.when(
-		new TextCommand('', 'pingCommand'),
-		new Greeting()
-	)
+// Handle inline option callbacks
+bot.action('option1', (ctx) => {
+    ctx.reply('You chose Option 1');
+});
 
-	.otherwise(new DocumentController());
+bot.action('option2', (ctx) => {
+    ctx.answerCbQuery('You chose Option 2');
+});
+
+bot.action('option3', (ctx) => {
+    ctx.answerCbQuery('You chose Option 3');
+});
+
+bot.action('option4', (ctx) => {
+    ctx.answerCbQuery('You chose Option 4');
+});
+
+bot.on('text', (ctx) => {
+    //const messageText = ctx.message.text.toLowerCase();
+
+    if (messageText.match(/^(hi|hello|hey|hiya|sup|start|bonjour|hola)$/i)) {
+        ctx.reply('Namaste');
+    } else {
+        ctx.reply(`Quit messing around, ${ctx.message.from.first_name} 🥱`);
+    }
+});
+
+// Handle Document
+bot.on('document', async (ctx) => {
+    const fileId = ctx.message.document.file_id;
+    const fileName = ctx.message.document.file_name;
+
+    if (fileName.endsWith('.apk')) {
+        await ctx.reply('Working on it...');
+
+        const fileLink = await ctx.telegram.getFileLink(fileId);
+	//const fsFilePath=`./temp/${filePath}`;
+	const filePath = `./temp/${fileName.replace('.apk', '_signed.apk')}`;
+	console.log(`${fileLink}`);console.log(`${filePath}`);
+        exec(`wget ${fileLink} -O "${filePath}" -q && apksigner sign --ks keystore/${keystoreFileName} --ks-pass pass:${keystorePASS} "${filePath}" && rm "${filePath}.idsig"`, async (error, stdout, stderr) => {
+            if (error) {
+                await ctx.reply('Couldn\'t handle the file');
+                console.error(`Error running bash command: ${error}`);
+                return;
+            }
+
+            // Send the signed file back
+            await ctx.reply('It\'s on the way boo 😘', { reply_to_message_id: ctx.message.message_id });
+            await ctx.replyWithDocument({ source: filePath });
+
+            // Cleanup: Delete the temporary file
+            fs.unlink(filePath, (err) => {
+		    if (err) {
+       			console.error(`Error deleting file: ${err}`);
+    		    } else {
+        		console.log(`File ${filePath} deleted successfully`);
+    	    }
+});
+
+        });
+    }
+});
+
+// Notify when bot is up
+bot.telegram.sendMessage(ownerChatID, "Ok, I'm up 🥱").catch(error => {
+    console.error(error);
+});
+
+bot.launch().then(() => {
+    console.log('Bot started');
+});
